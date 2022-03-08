@@ -9,6 +9,7 @@ import pandas as pd
 from utilities import *
 import pickle
 import json
+from copy import deepcopy
 
 
 user = UserData(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
@@ -69,27 +70,30 @@ def get_balances(trans_list: list):
         timestamp = int(item.get('createdAt'))
         biz_type = item.get('bizType')
 
-        balance_dict[currency][0] += (1 if direction == 'in' else -1) * amount
-
-        if currency == 'USDT' and direction in ['in', 'out'] and biz_type == 'Exchange':
-            symbol_pair = json.loads(item.get('context')).get('symbol')
-            coin = symbol_pair.replace(currency, '').replace('-', '')
-            balance_dict[coin][1] += (-1 if direction == 'in' else 1) * amount  # this is the amount that has been exchanged for the coin
-
-        balance_time_dict[timestamp] = balance_dict.copy()  # todo this dictionary is getting overwritten with incorrect values (SAND was an example)
-
-        if currency == 'DOGE' and direction in ['in', 'out'] and biz_type in ['Deposit', 'Withdraw']:  # DOGE is the coin I deposit and withdraw from kucoin with
+        if biz_type in ['Deposit', 'Withdraw']:
+            balance_dict[currency][0] += (1 if direction == 'in' else -1) * amount
             while True:
                 try:
-                    funds_usd += (1 if direction == 'in' else -1) * amount * float(market.get_kline(f'{currency}-USDT',
-                                                startAt=int(timestamp / 1000), endAt=int(timestamp / 1000) + 180, kline_type='3min')[0][1])
+                    deposit_usd = (1 if direction == 'in' else -1) * amount * float(market.get_kline(f'{currency}-USDT',
+                                                startAt=int(timestamp / 1000), endAt=int(timestamp / 1000) + 60, kline_type='1min')[0][1])
                     time.sleep(0.2)
                 except:
                     print(f'Getting rate limited at the fund dictionary step; sleeping for 5 seconds')
                     time.sleep(5)
                     continue
+                funds_usd += deposit_usd
                 fund_dict[timestamp] = funds_usd
                 break
+        elif biz_type == 'Exchange' and currency != 'USDT':
+            balance_dict[currency][0] += (1 if direction == 'in' else -1) * amount
+        elif biz_type == 'Exchange' and currency == 'USDT':
+            balance_dict[currency][0] += (1 if direction == 'in' else -1) * amount
+            symbol_pair = json.loads(item.get('context')).get('symbol')
+            coin = symbol_pair.replace(currency, '').replace('-', '')
+            balance_dict[coin][1] += (-1 if direction == 'in' else 1) * amount  # this is the amount that has been exchanged for the coin
+        else:
+            print(f'biz_type is {biz_type}')
+        balance_time_dict[timestamp] = deepcopy(balance_dict)
 
     return balance_time_dict, fund_dict
 
@@ -159,8 +163,10 @@ def get_balance_values(balance_dict: dict, fund_dict: dict):
 def reshape_dict(coin_fund_dict):
     ret_dict = {}
     for currency in coin_fund_dict[list(coin_fund_dict.keys())[-1]].keys():
-        total_dict = dict([(key, val) for key, val in zip(list(coin_fund_dict.keys()), [coin_fund_dict.get(timestamp).get(currency, [0, 0])[0] for timestamp in coin_fund_dict.keys()])])
-        fund_dict = dict([(key, val) for key, val in zip(list(coin_fund_dict.keys()), [coin_fund_dict.get(timestamp).get(currency, [0, 0])[1] for timestamp in coin_fund_dict.keys()])])
+        total_dict = dict([(key, val) for key, val in zip(list(coin_fund_dict.keys()), [coin_fund_dict.get(timestamp).get(currency, [0, 0])[0]
+                                                                                        for timestamp in coin_fund_dict.keys()])])
+        fund_dict = dict([(key, val) for key, val in zip(list(coin_fund_dict.keys()), [coin_fund_dict.get(timestamp).get(currency, [0, 0])[1]
+                                                                                       for timestamp in coin_fund_dict.keys()])])
 
         ret_dict[currency] = [total_dict, fund_dict]
 
@@ -235,6 +241,7 @@ def load_pickle():
 
 if __name__ == '__main__':
     trans_list = get_account_ledgers()
+
     balance_dict, fund_dict = get_balances(trans_list)
     worth_dict, total_fund_dict, coin_fund_dict = get_balance_values(balance_dict, fund_dict)
     save_pickle([worth_dict, total_fund_dict, coin_fund_dict])
