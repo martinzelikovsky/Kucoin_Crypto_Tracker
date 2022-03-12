@@ -1,23 +1,5 @@
-import time
-import pprint as pp
-from kucoin.user.user import UserData
-from kucoin.trade.trade import TradeData
-from kucoin.market.market import MarketData
-import plotly.graph_objects as go
-from collections import defaultdict
-import pandas as pd
 from utilities import *
-import pickle
-import json
-from copy import deepcopy
 
-
-user = UserData(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
-trade = TradeData(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
-market = MarketData(key=API_KEY, secret=API_SECRET, passphrase=API_PASSWORD)
-
-def get_account_dict():
-    account_list_raw = user.get_account_list()
 
 def get_account_ledgers():
     '''
@@ -63,7 +45,7 @@ def get_balances(trans_list: list):
     fund_dict = {}  # dict containing the transactions funding my trading account
     funds_usd = 0
 
-    for item in trans_list:
+    for item in tqdm(trans_list):
         currency = item.get('currency')
         direction = item.get('direction')
         amount = float(item.get('amount'))
@@ -91,8 +73,7 @@ def get_balances(trans_list: list):
             symbol_pair = json.loads(item.get('context')).get('symbol')
             coin = symbol_pair.replace(currency, '').replace('-', '')
             balance_dict[coin][1] += (-1 if direction == 'in' else 1) * amount  # this is the amount that has been exchanged for the coin
-        else:
-            print(f'biz_type is {biz_type}')
+
         balance_time_dict[timestamp] = deepcopy(balance_dict)
 
     return balance_time_dict, fund_dict
@@ -136,7 +117,7 @@ def get_balance_values(balance_dict: dict, fund_dict: dict):
         #  extract the price of the coins at the tmp_date using the balance of balance
         price_dict = {}
         coin_fund_dict = {}
-        for currency in balance.keys():
+        for currency in tqdm(balance.keys()):
             while True:
                 try:
                     currency_worth = balance.get(currency, [0, 0])[0] * (float(market.get_kline(f'{currency}-USDT', startAt=tmp_date_secs,
@@ -182,13 +163,16 @@ def plot(total_dict, total_fund_dict, title):
     hovertext = [f'{int(total)} \n Profit: {percent}%' for total, percent in zip(total_y, profit)]
 
     fig.add_trace(
-        go.Scatter(x=list(total_dict.keys()), y=total_y, name='Market Worth', hovertext=hovertext))
+        go.Scatter(x=list(total_dict.keys()), y=total_y, name='Market Worth (USDT)', hovertext=hovertext))
 
     fig.add_trace(
-        go.Scatter(x=list(total_fund_dict.keys()), y=fund_y, name='Funds Invested'))
+        go.Scatter(x=list(total_fund_dict.keys()), y=fund_y, name='Funds Invested (USDT)'))
 
     # Set title
     fig.update_layout(title_text=title)
+
+    # Y-axis title
+    fig.update_yaxes(title_text='Value (USDT)')
 
     # Add range slider
     fig.update_layout(
@@ -241,7 +225,6 @@ def load_pickle():
 
 if __name__ == '__main__':
     trans_list = get_account_ledgers()
-
     balance_dict, fund_dict = get_balances(trans_list)
     worth_dict, total_fund_dict, coin_fund_dict = get_balance_values(balance_dict, fund_dict)
     save_pickle([worth_dict, total_fund_dict, coin_fund_dict])
@@ -251,13 +234,3 @@ if __name__ == '__main__':
     for coin, (total, fund) in plot_dict.items():
         title = f'{coin} worth vs. Time'
         plot(total, fund, title=title)
-
-
-    #  todo : Create multiple plots where I can see how much I am up or down on individual investments.
-
-
-    #  todo: edit the script to output a list of how much you are up or down on various investments, and from different time periods + overall
-    #  todo: add the feature where I can select a segment on the plot and I get shown the percentage difference between the start and end of the selection.
-
-
-    # pp.pprint(test)
