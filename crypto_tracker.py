@@ -35,14 +35,14 @@ def get_account_ledgers():
 
 def get_balances(trans_list: list):
     '''
-    This function will read a list of all the transactions made in all accounts, and will append a "balances" item to
-    the dictionary of every transaction.
-    :return: dict
+    This function will read a list of all the transactions made in all accounts, and will output a dictionary of
+    currency balances, and a dictionary of funding balances.
+    :param trans_list: list of all transactions in all accounts from start date.
+    :return: list
     '''
-    #
     balance_dict = defaultdict(lambda: [0, 0])  # balances of coins with key being timestamp and value being the dictionary of all the balances
     balance_time_dict = {}
-    fund_dict = {}  # dict containing the transactions funding my trading account
+    fund_dict = {}  # dict containing the transactions funding all accounts
     funds_usd = 0
 
     for item in tqdm(trans_list):
@@ -72,7 +72,7 @@ def get_balances(trans_list: list):
             balance_dict[currency][0] += (1 if direction == 'in' else -1) * amount
             symbol_pair = json.loads(item.get('context')).get('symbol')
             coin = symbol_pair.replace(currency, '').replace('-', '')
-            balance_dict[coin][1] += (-1 if direction == 'in' else 1) * amount  # this is the amount that has been exchanged for the coin
+            balance_dict[coin][1] += (-1 if direction == 'in' else 1) * amount  # amount that has been exchanged for the coin
 
         balance_time_dict[timestamp] = deepcopy(balance_dict)
 
@@ -80,10 +80,11 @@ def get_balances(trans_list: list):
 
 def get_balance_values(balance_dict: dict, fund_dict: dict):
     '''
-    This function will map crypto balances to an arbitrary time. This function will be used to return a daily balance
-    and worth of my accounts.
-    :param balance_dict:
-    :return:
+    This function will map currency balances to an arbitrary time. This function will be used to return a daily balance
+    and worth of your accounts.
+    :param balance_dict: Dictionary of currency balances as outputted by get_balances()
+    :param fund_dict: Dictionary of funding balances as outputted by get_balances()
+    :return: tuple
     '''
     if not os.path.exists(PICKLE_FILEPATH):
         tmp_date = START_DATE
@@ -142,6 +143,12 @@ def get_balance_values(balance_dict: dict, fund_dict: dict):
     return total_dict, total_fund_dict, total_coin_fund_dict
 
 def reshape_dict(coin_fund_dict):
+    '''
+    This function reshapes the inputted dictionary to be structured as {currency: [market_worth_dict, funded_dict]} for
+    easy plotting.
+    :param coin_fund_dict: input dictionary from get_balance_values()
+    :return: dict
+    '''
     ret_dict = {}
     for currency in coin_fund_dict[list(coin_fund_dict.keys())[-1]].keys():
         total_dict = dict([(key, val) for key, val in zip(list(coin_fund_dict.keys()), [coin_fund_dict.get(timestamp).get(currency, [0, 0])[0]
