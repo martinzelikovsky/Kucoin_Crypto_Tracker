@@ -30,6 +30,6 @@ API request rate limitations, but future runs will take much less time)
 
 ## Example Output
 ### Aggregate Performance (screenshot of interactive plot with dummy data)
-![img.png](img.png)
+![img.png](readme/img.png)
 ### Per-coin Performance (screenshot of interactive plot with dummy data)
-![img_1.png](img_1.png)
+![img_1.png](readme/img_1.png)
