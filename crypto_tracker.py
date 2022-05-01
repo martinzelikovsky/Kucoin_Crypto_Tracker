@@ -12,7 +12,13 @@ def get_account_ledgers():
 
     while datetime.today().timestamp() > tmp_date.timestamp():
         tmp_date_millis = int(tmp_date.timestamp() * 1000)
-        ledger = user.get_account_ledger(startAt=tmp_date_millis, pageSize=PAGE_SIZE)
+        try:
+            ledger = user.get_account_ledger(startAt=tmp_date_millis, pageSize=PAGE_SIZE)
+        except Exception as e:
+            print(f'Getting rate limited at the account ledger step; sleeping for 5 seconds \n error: {e}')
+            time.sleep(5)
+            continue
+
         for page in range(1, ledger.get('totalPage') + 1):
             ledger = user.get_account_ledger(startAt=tmp_date_millis, pageSize=PAGE_SIZE, currentPage=page)
             if ledger.get('items'):
