@@ -1,4 +1,4 @@
-from utilities import *
+from utilities_filled import *
 
 
 def get_account_ledgers():
@@ -11,27 +11,44 @@ def get_account_ledgers():
     tmp_date = START_DATE
 
     while datetime.today().timestamp() > tmp_date.timestamp():
+        print(f'Getting transaction history data from {tmp_date}')
         tmp_date_millis = int(tmp_date.timestamp() * 1000)
-        try:
-            ledger = user.get_account_ledger(startAt=tmp_date_millis, pageSize=PAGE_SIZE)
-        except Exception as e:
-            print(f'Getting rate limited at the account ledger step; sleeping for 5 seconds \n error: {e}')
-            time.sleep(5)
+        response = get_account_ledgers_request(tmp_date_millis)
+        if not response.ok:
+            print(f'Getting rate-limited by API during Ledger collection step: {response.text}')
+            time.sleep(3)  # sleep time if rate-limited by the API
             continue
 
-        for page in range(1, ledger.get('totalPage') + 1):
-            ledger = user.get_account_ledger(startAt=tmp_date_millis, pageSize=PAGE_SIZE, currentPage=page)
-            if ledger.get('items'):
-                ledger_history.append(ledger)
+        response_dict = response.json()['data']
+        total_pages = response_dict['totalPage']
+        response_items = response_dict['items']
+        if response_items:
+            ledger_history.append(response_items)
+
+        page_num = 1
+        while page_num < total_pages:
+            response = get_account_ledgers_request(tmp_date_millis, current_page=page_num)
+            if not response.ok:
+                print(f'Getting rate-limited by API during Ledger collection step: {response.text}')
+                time.sleep(12)  # sleep time if rate-limited by the API
+                continue
+
+            response_dict = response.json()
+            response_items = response_dict['items']
+            if response_items:
+                ledger_history.append(response_items)
+
+            page_num += 1
+            time.sleep(LEDGER_POLL_PERIOD)
+
         tmp_date += timedelta(days=1)
 
     trans_list = []
     ids = []
-    for ledger in ledger_history:
-        for page in range(1, ledger.get('totalPage') + 1):
-            for item in ledger['items']:
-                trans_list.append(item)
-                ids.append(item['id'])
+    for ledger_list in ledger_history:
+        for trans in ledger_list:
+            trans_list.append(trans)
+            ids.append(trans['id'])
 
     uniqueness_test = len(ids) == len(set(ids))
     print(f'Uniqueness test result is: {uniqueness_test}')
@@ -61,14 +78,17 @@ def get_balances(trans_list: list):
         if biz_type in ['Deposit', 'Withdraw']:
             balance_dict[currency][0] += (1 if direction == 'in' else -1) * amount
             while True:
-                try:
-                    deposit_usd = (1 if direction == 'in' else -1) * amount * float(market.get_kline(f'{currency}-USDT',
-                                                startAt=int(timestamp / 1000), endAt=int(timestamp / 1000) + 60, kline_type='1min')[0][1])
-                    time.sleep(0.2)
-                except:
-                    print(f'Getting rate limited at the fund dictionary step; sleeping for 5 seconds')
-                    time.sleep(5)
+                currency_pair = f'{currency}-USDT'
+                response = get_kline_request(currency_pair, start_time=int(timestamp / 1000), end_time=int(timestamp / 1000) + 60)
+
+                if not response.ok:
+                    print(response.text)
+                    time.sleep(3)  # sleep time if rate-limited by the API
                     continue
+
+                kline_data = response.json()['data']
+                deposit_usd = (1 if direction == 'in' else -1) * amount * float(kline_data[0][1])
+                time.sleep(LEDGER_POLL_PERIOD)
                 funds_usd += deposit_usd
                 fund_dict[timestamp] = funds_usd
                 break
@@ -126,17 +146,23 @@ def get_balance_values(balance_dict: dict, fund_dict: dict):
         coin_fund_dict = {}
         for currency in tqdm(balance.keys()):
             while True:
-                try:
-                    currency_worth = balance.get(currency, [0, 0])[0] * (float(market.get_kline(f'{currency}-USDT', startAt=tmp_date_secs,
-                                                endAt=tmp_date_secs + 60, kline_type='1min')[0][1]) if currency != 'USDT' else 1)
-                except Exception as e:
-                    msg = e
-                    time.sleep(12)
-                    print(f'Getting account worth from {tmp_date.strftime("%d_%m_%Y")} Getting rate limited: {msg}')
+                currency_pair = f'{currency}-USDT'
+                response = get_kline_request(currency_pair, start_time=int(tmp_date_secs), end_time=int(tmp_date_secs) + 60)
+
+                if not response.ok:
+                    print(f'Getting account worth from {tmp_date.strftime("%d_%m_%Y")} Getting rate limited: {response.text}')
+                    time.sleep(12)  # sleep time if rate-limited by the API
                     continue
+
+                kline_data = response.json().get('data')
+                currency_to_usd = float(kline_data[0][1]) if currency != 'USDT' else 1
+                currency_worth = balance.get(currency, [0, 0])[0] * currency_to_usd
+
                 price_dict[f'{currency}-USDT'] = currency_worth
                 funded = balance.get(currency, [0, 0])[1]
                 coin_fund_dict[currency] = [currency_worth, funded]
+
+                time.sleep(KLINE_POLL_PERIOD)
                 break
 
         total_dict[tmp_date] = sum(price_dict.values())
