@@ -16,7 +16,6 @@ their investments.
 1. Clone repository 
 2. Gain API keys to your Kucoin account with "read" privileges
 3. Install dependencies
-   - `pip install kucoin-python`
    - `pip install plotly==5.6.0`
    - `pip install tqdm`
 4. Fill in `utilities.py` with your credentials and account information (API keys)
